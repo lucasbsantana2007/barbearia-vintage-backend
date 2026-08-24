@@ -23,10 +23,49 @@ from app.schemas import (
 )
 from app.security import create_access_token, get_current_user, hash_password, verify_password
 
+tags_metadata = [
+    {
+        "name": "Autenticação",
+        "description": "Login e emissão de token JWT para acesso às rotas protegidas.",
+    },
+    {
+        "name": "Clientes",
+        "description": "Cadastro, consulta, atualização e remoção de clientes da barbearia.",
+    },
+    {
+        "name": "Serviços",
+        "description": "Consulta dos serviços oferecidos pela barbearia (corte, barba, etc.).",
+    },
+    {
+        "name": "Agendamentos",
+        "description": "Criação, consulta, atualização e cancelamento de agendamentos, incluindo o controle de conflito de horários.",
+    },
+    {
+        "name": "Dashboard",
+        "description": "Indicadores e métricas operacionais da barbearia (agendamentos do dia, da semana e serviço mais popular).",
+    },
+    {
+        "name": "Sistema",
+        "description": "Rotas utilitárias de infraestrutura, como verificação de saúde da API.",
+    },
+]
+
 app = FastAPI(
     title="Barbearia Vintage API",
-    description="API do case técnico Insper Jr. Tech.",
+    description=(
+        "API REST do sistema de gestão da **Barbearia Vintage**, desenvolvida com FastAPI.\n\n"
+        "Permite o gerenciamento completo de clientes, serviços e agendamentos, além de "
+        "métricas operacionais para o painel administrativo.\n\n"
+        "### Autenticação\n"
+        "A maior parte das rotas exige um token JWT. Faça login em **Autenticação → "
+        "Autenticar usuário** para obter o token e clique em **Authorize** para usá-lo "
+        "automaticamente nas próximas requisições.\n\n"
+        "### Integrações\n"
+        "Ao criar um agendamento, os dados são encaminhados de forma assíncrona para um "
+        "workflow do n8n."
+    ),
     version="1.0.0",
+    openapi_tags=tags_metadata,
 )
 
 app.add_middleware(
@@ -61,12 +100,28 @@ def startup():
         db.close()
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Sistema"],
+    summary="Verificar status da API",
+    description="Endpoint simples de *health check*, usado para confirmar que a API está no ar.",
+    responses={200: {"description": "API operando normalmente."}},
+)
 def health():
     return {"status": "ok"}
 
 
-@app.post("/auth/login", response_model=TokenResponse)
+@app.post(
+    "/auth/login",
+    response_model=TokenResponse,
+    tags=["Autenticação"],
+    summary="Autenticar usuário",
+    description="Valida e-mail e senha do usuário administrativo e retorna um token JWT para uso nas demais rotas.",
+    responses={
+        200: {"description": "Login realizado com sucesso. Retorna o token de acesso."},
+        401: {"description": "E-mail ou senha inválidos."},
+    },
+)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == payload.email))
     if not user or not verify_password(payload.password, user.password_hash):
@@ -74,7 +129,17 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=create_access_token(user.id))
 
 
-@app.get("/clients", response_model=list[ClientOut])
+@app.get(
+    "/clients",
+    response_model=list[ClientOut],
+    tags=["Clientes"],
+    summary="Listar clientes",
+    description="Retorna todos os clientes cadastrados, ordenados por nome. Aceita busca opcional por nome parcial.",
+    responses={
+        200: {"description": "Lista de clientes retornada com sucesso."},
+        401: {"description": "Usuário não autenticado."},
+    },
+)
 def list_clients(
     search: str | None = Query(default=None),
     db: Session = Depends(get_db),
@@ -86,7 +151,19 @@ def list_clients(
     return db.scalars(stmt).all()
 
 
-@app.post("/clients", response_model=ClientOut, status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/clients",
+    response_model=ClientOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Clientes"],
+    summary="Criar cliente",
+    description="Cadastra um novo cliente na barbearia.",
+    responses={
+        201: {"description": "Cliente criado com sucesso."},
+        400: {"description": "Dados inválidos para criação do cliente."},
+        401: {"description": "Usuário não autenticado."},
+    },
+)
 def create_client(payload: ClientCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     client = Client(**payload.model_dump())
     db.add(client)
@@ -95,7 +172,19 @@ def create_client(payload: ClientCreate, db: Session = Depends(get_db), _: User 
     return client
 
 
-@app.put("/clients/{client_id}", response_model=ClientOut)
+@app.put(
+    "/clients/{client_id}",
+    response_model=ClientOut,
+    tags=["Clientes"],
+    summary="Atualizar cliente",
+    description="Atualiza os dados cadastrais de um cliente existente.",
+    responses={
+        200: {"description": "Cliente atualizado com sucesso."},
+        400: {"description": "Dados inválidos para atualização do cliente."},
+        401: {"description": "Usuário não autenticado."},
+        404: {"description": "Cliente não encontrado."},
+    },
+)
 def update_client(client_id: int, payload: ClientUpdate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     client = db.get(Client, client_id)
     if not client:
@@ -107,7 +196,19 @@ def update_client(client_id: int, payload: ClientUpdate, db: Session = Depends(g
     return client
 
 
-@app.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete(
+    "/clients/{client_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Clientes"],
+    summary="Remover cliente",
+    description="Remove um cliente do sistema. Não é permitido remover clientes que já possuem agendamentos.",
+    responses={
+        204: {"description": "Cliente removido com sucesso."},
+        401: {"description": "Usuário não autenticado."},
+        404: {"description": "Cliente não encontrado."},
+        409: {"description": "Cliente possui agendamentos e não pode ser removido."},
+    },
+)
 def delete_client(client_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     client = db.get(Client, client_id)
     if not client:
@@ -119,7 +220,17 @@ def delete_client(client_id: int, db: Session = Depends(get_db), _: User = Depen
     db.commit()
 
 
-@app.get("/services", response_model=list[ServiceOut])
+@app.get(
+    "/services",
+    response_model=list[ServiceOut],
+    tags=["Serviços"],
+    summary="Listar serviços",
+    description="Retorna todos os serviços oferecidos pela barbearia, ordenados por nome.",
+    responses={
+        200: {"description": "Lista de serviços retornada com sucesso."},
+        401: {"description": "Usuário não autenticado."},
+    },
+)
 def list_services(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     return db.scalars(select(Service).order_by(Service.name)).all()
 
@@ -147,7 +258,17 @@ def _ensure_slot_available(db: Session, appointment_date, start_time, ignore_id:
         raise HTTPException(status_code=409, detail="Este horário já possui um agendamento.")
 
 
-@app.get("/appointments", response_model=list[AppointmentOut])
+@app.get(
+    "/appointments",
+    response_model=list[AppointmentOut],
+    tags=["Agendamentos"],
+    summary="Listar agendamentos",
+    description="Retorna os agendamentos cadastrados, com filtros opcionais por data e por status.",
+    responses={
+        200: {"description": "Lista de agendamentos retornada com sucesso."},
+        401: {"description": "Usuário não autenticado."},
+    },
+)
 def list_appointments(
     appointment_date: date | None = Query(default=None, alias="date"),
     status_filter: str | None = Query(default=None, alias="status"),
@@ -162,7 +283,24 @@ def list_appointments(
     return db.scalars(stmt).unique().all()
 
 
-@app.post("/appointments", response_model=AppointmentOut, status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/appointments",
+    response_model=AppointmentOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Agendamentos"],
+    summary="Criar agendamento",
+    description=(
+        "Cria um novo agendamento para um cliente e serviço existentes. "
+        "Verifica se o horário está disponível e envia os dados para o workflow do n8n em segundo plano."
+    ),
+    responses={
+        201: {"description": "Agendamento criado com sucesso."},
+        400: {"description": "Dados inválidos para criação do agendamento."},
+        401: {"description": "Usuário não autenticado."},
+        404: {"description": "Cliente ou serviço não encontrado."},
+        409: {"description": "Já existe um agendamento para o horário informado."},
+    },
+)
 async def create_appointment(
     payload: AppointmentCreate,
     background_tasks: BackgroundTasks,
@@ -181,7 +319,20 @@ async def create_appointment(
     return appointment
 
 
-@app.put("/appointments/{appointment_id}", response_model=AppointmentOut)
+@app.put(
+    "/appointments/{appointment_id}",
+    response_model=AppointmentOut,
+    tags=["Agendamentos"],
+    summary="Atualizar agendamento",
+    description="Atualiza os dados de um agendamento existente, validando cliente, serviço e disponibilidade do novo horário.",
+    responses={
+        200: {"description": "Agendamento atualizado com sucesso."},
+        400: {"description": "Dados inválidos para atualização do agendamento."},
+        401: {"description": "Usuário não autenticado."},
+        404: {"description": "Agendamento, cliente ou serviço não encontrado."},
+        409: {"description": "Já existe um agendamento para o horário informado."},
+    },
+)
 def update_appointment(
     appointment_id: int,
     payload: AppointmentUpdate,
@@ -200,7 +351,19 @@ def update_appointment(
     return db.scalar(_appointment_query().where(Appointment.id == appointment_id))
 
 
-@app.patch("/appointments/{appointment_id}/status", response_model=AppointmentOut)
+@app.patch(
+    "/appointments/{appointment_id}/status",
+    response_model=AppointmentOut,
+    tags=["Agendamentos"],
+    summary="Atualizar status do agendamento",
+    description="Altera o status de um agendamento (ex.: concluído, cancelado, não compareceu).",
+    responses={
+        200: {"description": "Status do agendamento atualizado com sucesso."},
+        400: {"description": "Status informado é inválido."},
+        401: {"description": "Usuário não autenticado."},
+        404: {"description": "Agendamento não encontrado."},
+    },
+)
 def update_appointment_status(
     appointment_id: int,
     payload: AppointmentStatusUpdate,
@@ -215,7 +378,18 @@ def update_appointment_status(
     return db.scalar(_appointment_query().where(Appointment.id == appointment_id))
 
 
-@app.delete("/appointments/{appointment_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete(
+    "/appointments/{appointment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Agendamentos"],
+    summary="Remover agendamento",
+    description="Remove definitivamente um agendamento do sistema.",
+    responses={
+        204: {"description": "Agendamento removido com sucesso."},
+        401: {"description": "Usuário não autenticado."},
+        404: {"description": "Agendamento não encontrado."},
+    },
+)
 def delete_appointment(appointment_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     appointment = db.get(Appointment, appointment_id)
     if not appointment:
@@ -224,7 +398,21 @@ def delete_appointment(appointment_id: int, db: Session = Depends(get_db), _: Us
     db.commit()
 
 
-@app.get("/dashboard", response_model=DashboardOut)
+@app.get(
+    "/dashboard",
+    response_model=DashboardOut,
+    tags=["Dashboard"],
+    summary="Obter indicadores do painel",
+    description=(
+        "Retorna métricas operacionais para o painel administrativo: agendamentos do dia "
+        "(total, concluídos, cancelados e não comparecidos), total de agendamentos da semana "
+        "e o serviço mais popular."
+    ),
+    responses={
+        200: {"description": "Indicadores retornados com sucesso."},
+        401: {"description": "Usuário não autenticado."},
+    },
+)
 def dashboard(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
