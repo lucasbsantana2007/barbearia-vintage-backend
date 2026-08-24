@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -125,6 +126,28 @@ def health():
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == payload.email))
     if not user or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="E-mail ou senha inválidos.")
+    return TokenResponse(access_token=create_access_token(user.id))
+
+
+@app.post(
+    "/auth/token",
+    response_model=TokenResponse,
+    tags=["Autenticação"],
+    summary="Autenticar via formulário OAuth2 (uso exclusivo do Swagger)",
+    description=(
+        "Rota auxiliar exigida pelo fluxo *OAuth2 Password* do Swagger UI, usada apenas pelo botão "
+        "**Authorize** da documentação. O campo `username` do formulário deve receber o e-mail do "
+        "usuário. O frontend da aplicação deve continuar utilizando **/auth/login**."
+    ),
+    responses={
+        200: {"description": "Login realizado com sucesso. Retorna o token de acesso."},
+        401: {"description": "E-mail ou senha inválidos."},
+    },
+)
+def login_for_swagger(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(User.email == form_data.username))
+    if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="E-mail ou senha inválidos.")
     return TokenResponse(access_token=create_access_token(user.id))
 
