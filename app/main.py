@@ -273,20 +273,38 @@ def _appointment_query():
 def _validate_relations(payload, db: Session):
     if not db.get(Client, payload.client_id):
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
-    if not db.get(Service, payload.service_id):
+    service = db.get(Service, payload.service_id)
+    if not service:
         raise HTTPException(status_code=404, detail="Serviço não encontrado.")
+    return service
 
 
-def _ensure_slot_available(db: Session, appointment_date, start_time, ignore_id: int | None = None):
-    stmt = select(Appointment).where(
-        Appointment.date == appointment_date,
-        Appointment.start_time == start_time,
-        Appointment.status != "cancelled",
+def _minutes(t) -> int:
+    return t.hour * 60 + t.minute
+
+
+def _ensure_slot_available(
+    db: Session,
+    appointment_date,
+    start_time,
+    duration_minutes: int,
+    ignore_id: int | None = None,
+):
+    stmt = (
+        select(Appointment)
+        .options(joinedload(Appointment.service))
+        .where(Appointment.date == appointment_date, Appointment.status != "cancelled")
     )
     if ignore_id:
         stmt = stmt.where(Appointment.id != ignore_id)
-    if db.scalar(stmt):
-        raise HTTPException(status_code=409, detail="Este horário já possui um agendamento.")
+
+    new_start = _minutes(start_time)
+    new_end = new_start + duration_minutes
+    for existing in db.scalars(stmt).unique():
+        existing_start = _minutes(existing.start_time)
+        existing_end = existing_start + existing.service.duration_minutes
+        if new_start < existing_end and existing_start < new_end:
+            raise HTTPException(status_code=409, detail="Este horário conflita com um agendamento existente.")
 
 
 @app.get(
@@ -338,8 +356,8 @@ async def create_appointment(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    _validate_relations(payload, db)
-    _ensure_slot_available(db, payload.date, payload.start_time)
+    service = _validate_relations(payload, db)
+    _ensure_slot_available(db, payload.date, payload.start_time, service.duration_minutes)
 
     appointment = Appointment(**payload.model_dump())
     db.add(appointment)
@@ -373,8 +391,8 @@ def update_appointment(
     appointment = db.get(Appointment, appointment_id)
     if not appointment:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
-    _validate_relations(payload, db)
-    _ensure_slot_available(db, payload.date, payload.start_time, ignore_id=appointment_id)
+    service = _validate_relations(payload, db)
+    _ensure_slot_available(db, payload.date, payload.start_time, service.duration_minutes, ignore_id=appointment_id)
 
     for key, value in payload.model_dump().items():
         setattr(appointment, key, value)
