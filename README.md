@@ -18,6 +18,8 @@ API REST do case técnico da Insper Jr. Tech.
 - Serviços cadastrados no banco
 - Dashboard operacional
 - Disparo de webhook para n8n em novo agendamento
+- CRUD de despesas (produtos, funcionários, aluguel, impostos etc.), por mês
+- Chave de acesso extra para liberar a área financeira no frontend
 
 ## Rodando localmente
 
@@ -37,6 +39,11 @@ Swagger: `http://localhost:8000/docs`
 - senha: `admin123`
 
 Troque as credenciais no `.env`.
+
+### Chave de acesso do financeiro
+- chave: `Confidencial2026`
+
+Exigida pelo frontend para abrir a aba Financeiro, validada em `POST /finance/unlock`. Troque em `FINANCE_PASSCODE` no `.env`.
 
 ## PostgreSQL
 
@@ -61,4 +68,7 @@ N8N_WEBHOOK_URL=http://localhost:5678/webhook/barbearia-vintage-confirmation
 - `GET/POST /appointments`
 - `PUT/DELETE /appointments/{id}`
 - `PATCH /appointments/{id}/status`
+- `GET/POST /expenses`
+- `PUT/DELETE /expenses/{id}`
+- `POST /finance/unlock`
 - `GET /dashboard`
