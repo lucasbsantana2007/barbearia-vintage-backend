@@ -232,21 +232,18 @@ def update_client(client_id: int, payload: ClientUpdate, db: Session = Depends(g
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["Clientes"],
     summary="Remover cliente",
-    description="Remove um cliente do sistema. Não é permitido remover clientes que já possuem agendamentos.",
+    description="Remove um cliente do sistema. Agendamentos associados a ele são removidos junto.",
     responses={
-        204: {"description": "Cliente removido com sucesso."},
+        204: {"description": "Cliente (e seus agendamentos, se houver) removidos com sucesso."},
         401: {"description": "Usuário não autenticado."},
         404: {"description": "Cliente não encontrado."},
-        409: {"description": "Cliente possui agendamentos e não pode ser removido."},
     },
 )
 def delete_client(client_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     client = db.get(Client, client_id)
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")
-    has_appointments = db.scalar(select(func.count(Appointment.id)).where(Appointment.client_id == client_id))
-    if has_appointments:
-        raise HTTPException(status_code=409, detail="Não é possível remover um cliente que possui agendamentos.")
+    db.query(Appointment).filter(Appointment.client_id == client_id).delete()
     db.delete(client)
     db.commit()
 
