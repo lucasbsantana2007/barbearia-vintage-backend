@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     admin_email: str = "admin@barbeariavintage.com"
     admin_password: str = "admin123"
+    finance_passcode: str = "Confidencial2026"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

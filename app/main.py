@@ -21,6 +21,7 @@ from app.schemas import (
     ExpenseCreate,
     ExpenseOut,
     ExpenseUpdate,
+    FinancePasscodeRequest,
     LoginRequest,
     ServiceOut,
     TokenResponse,
@@ -513,6 +514,22 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db), _: User = Dep
         raise HTTPException(status_code=404, detail="Despesa não encontrada.")
     db.delete(expense)
     db.commit()
+
+
+@app.post(
+    "/finance/unlock",
+    tags=["Financeiro"],
+    summary="Validar chave de acesso do financeiro",
+    description="Verifica a chave de acesso adicional exigida para abrir a área financeira, sensível por conter faturamento e despesas.",
+    responses={
+        200: {"description": "Chave de acesso correta."},
+        401: {"description": "Chave de acesso incorreta ou usuário não autenticado."},
+    },
+)
+def unlock_finance(payload: FinancePasscodeRequest, _: User = Depends(get_current_user)):
+    if payload.password != settings.finance_passcode:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Chave de acesso incorreta.")
+    return {"unlocked": True}
 
 
 @app.get(

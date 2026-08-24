@@ -88,6 +88,10 @@ class ExpenseOut(ExpenseCreate):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FinancePasscodeRequest(BaseModel):
+    password: str
+
+
 class DashboardOut(BaseModel):
     appointments_today: int
     completed_today: int
