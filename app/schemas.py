@@ -71,6 +71,23 @@ class AppointmentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ExpenseCreate(BaseModel):
+    category: str = Field(min_length=2, max_length=120)
+    amount: Decimal = Field(gt=0)
+    month: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="Mês de referência no formato YYYY-MM.")
+
+
+class ExpenseUpdate(ExpenseCreate):
+    pass
+
+
+class ExpenseOut(ExpenseCreate):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
 class DashboardOut(BaseModel):
     appointments_today: int
     completed_today: int

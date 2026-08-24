@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
 from app.database import Base, SessionLocal, engine, get_db
-from app.models import Appointment, Client, Service, User
+from app.models import Appointment, Client, Expense, Service, User
 from app.n8n import send_appointment_to_n8n
 from app.schemas import (
     AppointmentCreate,
@@ -18,6 +18,9 @@ from app.schemas import (
     ClientOut,
     ClientUpdate,
     DashboardOut,
+    ExpenseCreate,
+    ExpenseOut,
+    ExpenseUpdate,
     LoginRequest,
     ServiceOut,
     TokenResponse,
@@ -44,6 +47,10 @@ tags_metadata = [
     {
         "name": "Dashboard",
         "description": "Indicadores e métricas operacionais da barbearia (agendamentos do dia, da semana e serviço mais popular).",
+    },
+    {
+        "name": "Financeiro",
+        "description": "Cadastro e consulta de despesas da barbearia, usadas no cálculo do faturamento e lucro mensal.",
     },
     {
         "name": "Sistema",
@@ -418,6 +425,93 @@ def delete_appointment(appointment_id: int, db: Session = Depends(get_db), _: Us
     if not appointment:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado.")
     db.delete(appointment)
+    db.commit()
+
+
+@app.get(
+    "/expenses",
+    response_model=list[ExpenseOut],
+    tags=["Financeiro"],
+    summary="Listar despesas",
+    description="Retorna as despesas cadastradas, com filtro opcional por mês (formato YYYY-MM).",
+    responses={
+        200: {"description": "Lista de despesas retornada com sucesso."},
+        401: {"description": "Usuário não autenticado."},
+    },
+)
+def list_expenses(
+    month: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    stmt = select(Expense).order_by(Expense.month.desc(), Expense.category)
+    if month:
+        stmt = stmt.where(Expense.month == month)
+    return db.scalars(stmt).all()
+
+
+@app.post(
+    "/expenses",
+    response_model=ExpenseOut,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Financeiro"],
+    summary="Criar despesa",
+    description="Cadastra uma nova despesa (ex.: produtos, funcionários, aluguel, impostos) para um mês de referência.",
+    responses={
+        201: {"description": "Despesa criada com sucesso."},
+        400: {"description": "Dados inválidos para criação da despesa."},
+        401: {"description": "Usuário não autenticado."},
+    },
+)
+def create_expense(payload: ExpenseCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    expense = Expense(**payload.model_dump())
+    db.add(expense)
+    db.commit()
+    db.refresh(expense)
+    return expense
+
+
+@app.put(
+    "/expenses/{expense_id}",
+    response_model=ExpenseOut,
+    tags=["Financeiro"],
+    summary="Atualizar despesa",
+    description="Atualiza os dados de uma despesa existente.",
+    responses={
+        200: {"description": "Despesa atualizada com sucesso."},
+        400: {"description": "Dados inválidos para atualização da despesa."},
+        401: {"description": "Usuário não autenticado."},
+        404: {"description": "Despesa não encontrada."},
+    },
+)
+def update_expense(expense_id: int, payload: ExpenseUpdate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    expense = db.get(Expense, expense_id)
+    if not expense:
+        raise HTTPException(status_code=404, detail="Despesa não encontrada.")
+    for key, value in payload.model_dump().items():
+        setattr(expense, key, value)
+    db.commit()
+    db.refresh(expense)
+    return expense
+
+
+@app.delete(
+    "/expenses/{expense_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Financeiro"],
+    summary="Remover despesa",
+    description="Remove definitivamente uma despesa do sistema.",
+    responses={
+        204: {"description": "Despesa removida com sucesso."},
+        401: {"description": "Usuário não autenticado."},
+        404: {"description": "Despesa não encontrada."},
+    },
+)
+def delete_expense(expense_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    expense = db.get(Expense, expense_id)
+    if not expense:
+        raise HTTPException(status_code=404, detail="Despesa não encontrada.")
+    db.delete(expense)
     db.commit()
 
 
